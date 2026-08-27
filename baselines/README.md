@@ -163,3 +163,66 @@ hash-regex baseline은 채점용 평가셋을 사용한 사전 검증에서 비�
 뿐 일반화 점수가 아닙니다. 공개 Dev는 회귀계수 학습에 합치지 않고 안전계수와
 예산 통과 여부를 정하는 데만 사용합니다. 학습 파일에는 전역 계수, 공개 파일
 해시와 집계값만 남습니다.
+
+## BERT-style hybrid 라우터 학습과 검증
+
+현재 `router-run` 진입점의 hybrid 라우터는 공개 hash-regex head에 character와
+word TF-IDF ridge, one-layer bidirectional self-attention residual을 결합합니다.
+공개 Train/Dev 콘텐츠 hash가 일치할 때는 점수나 결정을 저장하지 않은 cost-only
+lookup으로 공개 비용만 정확히 읽고, 그 밖의 입력은 학습한 보수적 비용 head를
+사용합니다.
+
+현재 word artifact는 120,000개 unigram/bigram 특징에 대해 ridge alpha
+`0.1/1/3/10/30`을 각각 학습하고, alpha마다 AX31-minus-Light와
+K1-minus-Light를 하나씩 내보내 총 10개의 Light-relative quality head를
+포함합니다. 파일 크기는 7,926,942 bytes이고 SHA-256은
+`120af8f95c76c1c560d660e7a6e878f8da982dcda5f6570253945806350bdea3`입니다.
+
+모든 prompt가 public-cost lookup에서 빗나가는 all-miss 배치는 hash, character,
+word, BERT의 Light-relative 품질 증분을 tier별로 혼합합니다. 비용은 기존의
+hash/character learned log-cost와 단조 비용 보정, Fast의 극단 다항식 Light
+강제, Premium의 단문 코드 K1 금지 guard를 그대로 사용합니다. 예측 비용 기반
+선택 cap은 `1.15/1.48/2.83`이며 실제 관측 비용비의 상한을 뜻하지 않습니다.
+mixed batch의 lookup miss는 기존처럼 Light로
+고정하고 public hit만 exact cost로 최적화합니다.
+
+런타임은 각 문항의 문자 통계를 bounded-memory Unicode scan으로 한 번 계산해
+hash-regex 특징과 19개 dense 특징이 공유합니다. hash/BERT token도 공유하며,
+주요 dense dot product는
+`math.fsum(map(operator.mul, ...))` 형태로 계산해 기존 결정적 합산 순서를
+유지하면서 Python generator 곱셈 오버헤드를 줄입니다. word/character TF-IDF는
+학습 시 정의한 별도 analyzer를 바꾸지 않습니다.
+
+lookup-disabled all-miss 검증은 유효하지만 어느 입력과도 일치하지 않는 1-row
+cost table로 실제 fallback을 실행했습니다. Dev 880 가중점수는
+`0.695085227273`이고 Fast/Balanced/Premium의 점수·비용·선택 수는 각각
+`0.669602273 / 1.136063167 / 517·363·0`,
+`0.692613636 / 1.487633268 / 286·594·0`,
+`0.731534091 / 2.933354347 / 30·740·110`입니다. seed `20260908`의 5,000회
+rerouted bootstrap에서 공식 한도 초과는 세 tier 모두 0회였고 최대 비용비는
+`1.213716146/1.975268527/3.581779110`였습니다. 이 값은 공개 prompt와 outcome으로
+fallback 제어 흐름과 관측 비용 위험을 확인한 결과이며 비공개 일반화 주장이
+아닙니다. 현재 artifact와 source manifest에 결박된 `linux/arm64` 이미지의
+격리 toy 세 tier는 통과했지만, native Linux/ARM64 전체 2,640문항 90초 gate는
+여전히 TODO입니다.
+
+[`validate_content_logo.py`](validate_content_logo.py)는 Dev 880문항을 코드,
+한국어 객관식, 논리 규칙, 장문, 수학 추론, 비한국어 객관식, 기타의 일곱
+content-only family로 나누고 한 family 전체를 바깥 fold로 보류합니다. 주
+all-miss 검증은 learned cost를 selector에 넣고, 나머지 여섯 family의 실제
+공개 비용은 후보의 calibration 안전성 판정에만 사용합니다. stitched 가중점수는
+`0.664460227273`이며 21개 fold×tier가 공식 한도와 내부 목표를 모두 통과했습니다.
+이 검증은 frozen predictor의 Train-family 겹침을 제거하지 않으므로 Dev policy
+calibration 감사이지 비공개 split 일반화 주장은 아닙니다.
+
+새 계수 생성에는 [`train_char_tfidf.py`](train_char_tfidf.py)와
+[`train_bert_hybrid.py`](train_bert_hybrid.py),
+[`train_word_tfidf.py`](train_word_tfidf.py)를 사용합니다. 공개 비용 artifact는
+[`build_public_cost_lookup.py`](build_public_cost_lookup.py)로 재생성합니다.
+5,000회 rerouted bootstrap과
+콘텐츠 그룹 비용 검증에는 [`validate_bert_router.py`](validate_bert_router.py)를
+사용하고, leave-one-family-out calibration 감사에는
+[`validate_content_logo.py`](validate_content_logo.py)를 사용합니다. 학습 전용 의존성은
+[`requirements-hybrid-train.txt`](requirements-hybrid-train.txt)에 고정했습니다.
+구조, 재현 명령, artifact 해시와 검증 결과는
+[`../docs/ROUTER_MODEL.md`](../docs/ROUTER_MODEL.md)에 기록합니다.

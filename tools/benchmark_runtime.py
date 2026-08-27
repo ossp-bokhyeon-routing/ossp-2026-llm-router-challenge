@@ -45,6 +45,10 @@ from ossp_router.runtime import (
     PHASE_C_CANDIDATE_LIMITS,
     validate_runtime_submission,
 )
+from ossp_router.source_manifest import (
+    SOURCE_MANIFEST_LABEL,
+    source_tree_manifest,
+)
 
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
@@ -71,7 +75,6 @@ BENCHMARK_CLIENT_TIMEOUT_SECONDS = (
 BASE_IMAGE_INDEX_DIGEST = (
     "sha256:f73754c398b259dfbbe482361dca8b464dea57da74efe5214966ca2ee767ee12"
 )
-SOURCE_MANIFEST_LABEL = "io.sktelecom.ossp.source-manifest-sha256"
 SHA256_RE = re.compile(r"[0-9a-f]{64}\Z")
 CONTAINER_WORKER = """
 import json
@@ -217,64 +220,7 @@ def _sha256_file(path: pathlib.Path) -> str:
 
 
 def _source_tree_manifest() -> Dict[str, Any]:
-    roots = (
-        ROOT / "container/Dockerfile",
-        ROOT / "container/measurement.Dockerfile",
-        ROOT / "container/entrypoint.py",
-        ROOT / "src",
-        ROOT / "baselines/feature_budget.py",
-        ROOT / "baselines/hash_regex.py",
-        ROOT / "baselines/hash-regex-public.v1.json",
-    )
-    files: List[pathlib.Path] = []
-    for root in roots:
-        if root.is_symlink():
-            raise RuntimeError(
-                f"소스 파일 목록에 심볼릭 링크를 포함할 수 없습니다: {root}"
-            )
-        if root.is_file():
-            files.append(root)
-        elif root.is_dir():
-            for path in root.rglob("*"):
-                if path.is_symlink():
-                    raise RuntimeError(
-                        "소스 파일 목록에 심볼릭 링크를 포함할 수 없습니다: "
-                        f"{path}"
-                    )
-                if (
-                    path.is_file()
-                    and "__pycache__" not in path.parts
-                    and not any(part.endswith(".egg-info") for part in path.parts)
-                    and not path.name.endswith((".pyc", ".pyo"))
-                ):
-                    files.append(path)
-    entries = [
-        {
-            "path": path.relative_to(ROOT).as_posix(),
-            "sha256": _sha256_file(path),
-        }
-        for path in sorted(set(files))
-    ]
-    encoded = json.dumps(
-        entries,
-        ensure_ascii=False,
-        sort_keys=True,
-        separators=(",", ":"),
-    ).encode("utf-8")
-    return {
-        "algorithm": "sha256",
-        "scope": [
-            "container/Dockerfile",
-            "container/measurement.Dockerfile",
-            "container/entrypoint.py",
-            "src",
-            "baselines/feature_budget.py",
-            "baselines/hash_regex.py",
-            "baselines/hash-regex-public.v1.json",
-        ],
-        "entries": entries,
-        "sha256": hashlib.sha256(encoded).hexdigest(),
-    }
+    return source_tree_manifest(ROOT)
 
 
 def _artifact_hashes() -> Dict[str, str]:

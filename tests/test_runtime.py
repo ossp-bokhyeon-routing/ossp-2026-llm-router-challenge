@@ -1338,7 +1338,10 @@ class RuntimeValidationTest(unittest.TestCase):
                 "ossp-router-helper-test",
             )
 
-    def test_image_inspect_requests_only_volume_presence(self) -> None:
+    def test_image_inspect_requests_volume_presence_and_labels(self) -> None:
+        labels = {
+            "io.sktelecom.ossp.source-manifest-sha256": "c" * 64,
+        }
         completed = subprocess.CompletedProcess(
             ("docker",),
             0,
@@ -1348,6 +1351,9 @@ class RuntimeValidationTest(unittest.TestCase):
                 b'"linux"\n'
                 b'"arm64"\n'
                 b"true\n"
+                b'{"io.sktelecom.ossp.source-manifest-sha256":"'
+                + b"c" * 64
+                + b'"}\n'
             ),
             b"",
         )
@@ -1361,11 +1367,13 @@ class RuntimeValidationTest(unittest.TestCase):
                 platform="linux/arm64",
             )
         self.assertTrue(metadata["Config"]["Volumes"])
+        self.assertEqual(labels, metadata["Config"]["Labels"])
         template = run.call_args.args[0][
             run.call_args.args[0].index("--format") + 1
         ]
         self.assertIn('if (index .Config "Volumes")', template)
         self.assertNotIn('json (index .Config "Volumes")', template)
+        self.assertIn("{{json .Config.Labels}}", template)
         command = run.call_args.args[0]
         self.assertEqual(
             ["--platform", "linux/arm64"],
@@ -1972,7 +1980,7 @@ class RuntimeValidationTest(unittest.TestCase):
             "import sys\n"
             "args=sys.argv[1:]\n"
             "if args[:2] == ['image','inspect']:\n"
-            "    print('null\\nnull\\nnull\\nnull\\nfalse')\n"
+            "    print('null\\nnull\\nnull\\nnull\\nfalse\\nnull')\n"
             "elif args[:2] == ['volume','create']:\n"
             "    print(args[-1])\n"
             "elif args[0] == 'run' and '--detach' in args:\n"
@@ -2190,7 +2198,7 @@ class RuntimeValidationTest(unittest.TestCase):
             "args=sys.argv[1:]\n"
             f"state_path=pathlib.Path({str(state_path)!r})\n"
             "if args[:2] == ['image','inspect']:\n"
-            "    print('null\\nnull\\nnull\\nnull\\nfalse')\n"
+            "    print('null\\nnull\\nnull\\nnull\\nfalse\\nnull')\n"
             "elif args[:2] == ['volume','create']:\n"
             "    print(args[-1])\n"
             "elif args[0] == 'run' and '--detach' in args:\n"
@@ -2307,7 +2315,7 @@ class RuntimeValidationTest(unittest.TestCase):
             "args=sys.argv[1:]\n"
             f"state_path=pathlib.Path({str(state_path)!r})\n"
             "if args[:2] == ['image','inspect']:\n"
-            "    print('null\\nnull\\nnull\\nnull\\nfalse')\n"
+            "    print('null\\nnull\\nnull\\nnull\\nfalse\\nnull')\n"
             "elif args[:2] == ['volume','create']:\n"
             "    print(args[-1])\n"
             "elif args[0] == 'run' and '--detach' in args:\n"

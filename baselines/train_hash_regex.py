@@ -49,11 +49,10 @@ def _require_numpy() -> None:
 
 
 def _file_sha256(path: Path) -> str:
-    digest = hashlib.sha256()
-    with path.open("rb") as handle:
-        for block in iter(lambda: handle.read(1024 * 1024), b""):
-            digest.update(block)
-    return digest.hexdigest()
+    # Public JSON is text.  Normalize checkout newlines so provenance is
+    # identical on Windows and in the official Linux materialization.
+    content = path.read_bytes().replace(b"\r\n", b"\n")
+    return hashlib.sha256(content).hexdigest()
 
 
 def _outcome_cost(outcome: Outcome, policy: RoutingPolicy) -> float:
@@ -445,16 +444,17 @@ def _write_json_atomic(path: Path, value: Mapping[str, Any]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     temporary = path.with_name(f".{path.name}.tmp-{os.getpid()}")
     try:
-        temporary.write_text(
-            json.dumps(
+        temporary.write_bytes(
+            (
+                json.dumps(
                 value,
                 ensure_ascii=False,
                 indent=2,
                 sort_keys=True,
                 allow_nan=False,
-            )
-            + "\n",
-            encoding="utf-8",
+                )
+                + "\n"
+            ).encode("utf-8")
         )
         temporary.chmod(0o644)
         os.replace(str(temporary), str(path))

@@ -142,9 +142,12 @@ PYTHONPATH=src python3 -m ossp_router.cli self-check \
   --report build/prompt-heuristic-report.json
 ```
 
+새 baseline을 만드는 가장 짧은 경로는
 [`src/ossp_router/heuristic.py`](src/ossp_router/heuristic.py)의 특징 추출과
-`select_model`을 바꾸는 것이 가장 짧은 구현 경로입니다. 등급·문항 ID·입력
-순서가 아니라 프롬프트 내용만 모델 선택 함수에 전달하십시오. 더 강한 특징
+`select_model`을 바꾸는 것입니다. 현재 제출용 `router-run`과 컨테이너 진입점은
+`ossp_router.bert_router.main`을 실행합니다. 어느 경로에서도 현재 tier와
+prompt/message content만 선택에 사용하고 `challenge_id`, `split`, `episode_id`,
+입력 순서는 사용하지 마십시오. 더 강한 특징
 baseline과 공개 Train/Dev로 학습하는 예제는
 [baseline 안내](baselines/README.md)에 있습니다.
 
@@ -162,13 +165,27 @@ python3 tools/validate_technical_submission.py
 있습니다. 로컬 태그는 검사 시작 시 변경 불가능한 이미지 ID로 고정됩니다.
 
 ```console
+SOURCE_MANIFEST_SHA256="$(PYTHONPATH=src python3 tools/benchmark_runtime.py \
+  --print-source-manifest-sha256)"
+
 docker build --pull --platform linux/arm64 \
+  --build-arg "SOURCE_MANIFEST_SHA256=${SOURCE_MANIFEST_SHA256}" \
   --file container/Dockerfile --tag my-router:check .
 
 PYTHONPATH=src python3 tools/check_runtime.py \
   --image my-router:check \
   --report build/runtime-check-report.json
 ```
+
+로컬에 native ARM64 Docker daemon이 없다면 GitHub Actions의
+`Native ARM64 runtime gate` workflow를 수동 실행할 수 있습니다. 이 workflow는
+`ubuntu-24.04-arm` runner가 실제 `aarch64`인지 먼저 확인하고, 고정 공개 입력을
+materialize한 뒤 위 image build와 전체 2,640문항 세 tier를 각각 세 번
+실행합니다. 2 CPU, 2 GiB memory/no-extra-swap, 32 PID, 256 MiB `/tmp`, 90초,
+network 없음, read-only root와 비특권 UID 제한을 강제하고 반복 출력의 byte
+결정성도 확인합니다. 다만 이 공개 검사기는 출력 파일을 사후 검증하므로 공식
+4 MiB/64 inode 출력 tmpfs 경계를 완전히 재현하지는 않습니다. 결과와 환경을
+commit SHA가 포함된 artifact로 보존합니다.
 
 이 검사는 위 materialization으로 만든 공개 Train 1,760문항과 Dev 880문항만
 사용합니다. 공개 모델별 outcome과 최종 평가 자료는 컨테이너에 전달하지
@@ -186,6 +203,7 @@ PYTHONPATH=src python3 tools/check_runtime.py \
 점수와 예외 처리가 필요할 때 참고해 주세요.
 
 - [점수 계산](docs/SCORING.md)
+- [BERT-style hybrid 라우터와 artifact](docs/ROUTER_MODEL.md)
 - [실행 오류와 규칙 집행](docs/ENFORCEMENT.md)
 - [데이터 라이선스](DATA_LICENSES.md)
 

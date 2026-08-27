@@ -1,11 +1,11 @@
 # SPDX-FileCopyrightText: Copyright 2026 SK TELECOM CO., LTD.
 # SPDX-License-Identifier: Apache-2.0
 
-"""Container entry point for one-tier prompt routing."""
+"""Container entry point for one-tier BERT-style prompt routing."""
 
 from __future__ import annotations
 
-from ossp_router.heuristic import main
+from ossp_router.bert_router import main
 
 
 if __name__ == "__main__":

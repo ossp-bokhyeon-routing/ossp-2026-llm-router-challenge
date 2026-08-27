@@ -15,6 +15,7 @@ SPDX-License-Identifier: Apache-2.0
 ## 필요할 때 참고
 
 - [SCORING.md](SCORING.md): 비용, 예산 한도, 등급별 점수 계산
+- [ROUTER_MODEL.md](ROUTER_MODEL.md): BERT-style hybrid 라우터 구조, artifact와 검증
 - [ENFORCEMENT.md](ENFORCEMENT.md): 재실행, 실행 실패와 전체 실격의 구분
 - [DATA_LICENSES.md](../DATA_LICENSES.md): 자료별 라이선스와 귀속
 

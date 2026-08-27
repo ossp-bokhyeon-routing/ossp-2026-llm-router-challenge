@@ -724,6 +724,7 @@ def inspect_image_runtime_metadata(
             "{{json .Os}}",
             "{{json .Architecture}}",
             '{{if (index .Config "Volumes")}}true{{else}}false{{end}}',
+            "{{json .Config.Labels}}",
         )
     )
     arguments = [*runtime_command, "image", "inspect"]
@@ -746,7 +747,7 @@ def inspect_image_runtime_metadata(
         )
     try:
         lines = completed.stdout.decode("utf-8").splitlines()
-        if len(lines) != 5:
+        if len(lines) != 6:
             raise ValueError("inspect 결과 줄 수 오류")
         (
             local_id,
@@ -754,9 +755,12 @@ def inspect_image_runtime_metadata(
             operating_system,
             architecture,
             has_declared_volumes,
+            labels,
         ) = (json.loads(line) for line in lines)
         if not isinstance(has_declared_volumes, bool):
             raise TypeError("VOLUME 존재 여부가 불리언이 아님")
+        if labels is not None and not isinstance(labels, Mapping):
+            raise TypeError("label 목록이 객체가 아님")
         if platform is not None:
             expected_os, expected_architecture = platform.split("/", 1)
             if operating_system == "":
@@ -773,7 +777,8 @@ def inspect_image_runtime_metadata(
         "Os": operating_system,
         "Architecture": architecture,
         "Config": {
-            "Volumes": {"<declared>": {}} if has_declared_volumes else None
+            "Volumes": {"<declared>": {}} if has_declared_volumes else None,
+            "Labels": labels,
         },
     }
 

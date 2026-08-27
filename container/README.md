@@ -5,8 +5,11 @@ SPDX-License-Identifier: Apache-2.0
 
 # Baseline 컨테이너
 
-[`Dockerfile`](Dockerfile)은 약한 프롬프트 기반 baseline을 표준
-`router-run` 인터페이스로 실행합니다. 라우터 실행 입력 JSON의 컨테이너 내부
+[`Dockerfile`](Dockerfile)은 학습된 BERT-style hybrid 라우터를 표준
+`router-run` 인터페이스로 실행합니다. 런타임은 표준 라이브러리만 사용하며
+패키지에 포함된 hash, character/word TF-IDF, tiny-BERT 계수와 공개 콘텐츠
+비용 lookup을 읽습니다.
+라우터 실행 입력 JSON의 컨테이너 내부
 경로는 `/challenge/input/inputs.json`, 선택 결과 JSON의 경로는
 `/challenge/output/submission.json`, 임시 경로는 `/tmp`입니다.
 
@@ -26,10 +29,12 @@ CPU, RAM, 프로세스·스레드 수의 최종 한도는
 출력 회수, Docker 자원 정리와 장애 복구 방식은
 [`../docs/OPERATIONS.md`](../docs/OPERATIONS.md)에 정의합니다.
 
-Colima의 Docker 호환 실행기에서 실제 이미지 빌드와 네트워크 없음, GPU 없음,
-비특권 사용자, 읽기 전용 루트 파일 시스템 조건을 검증했습니다. 통합 테스트는
-`OSSP_RUN_CONTAINER_TESTS=1`로 켤 수 있습니다. 공개 Train/Dev 호스트·격리
-컨테이너 측정 결과와 동결한 최종 자원 한도는
+대회 스타터의 과거 참조 이미지는 Colima의 Docker 호환 실행기에서 실제 이미지
+빌드와 네트워크 없음, GPU 없음, 비특권 사용자, 읽기 전용 루트 파일 시스템
+조건을 검증했습니다. 이 기록은 현재 BERT-style hybrid 라우터의 컨테이너 검증
+결과가 아닙니다. 통합 테스트는 `OSSP_RUN_CONTAINER_TESTS=1`로 켤 수 있습니다.
+참조 이미지의 공개 Train/Dev 호스트·격리 컨테이너 측정 결과와 동결한 최종
+자원 한도는
 [`../docs/runtime-benchmark.md`](../docs/runtime-benchmark.md)에 있습니다.
 측정과 한도 동결 절차는
 [`../docs/APPLE_SILICON_MEASUREMENT.md`](../docs/APPLE_SILICON_MEASUREMENT.md)를

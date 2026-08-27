@@ -1,0 +1,170 @@
+# SPDX-FileCopyrightText: Copyright 2026 ossp-bokhyeon-routing contributors
+# SPDX-License-Identifier: Apache-2.0
+
+name: Native ARM64 runtime gate
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: native-arm64-runtime-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  runtime-gate:
+    name: Full 2,640-row runtime gate
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 30
+
+    steps:
+      - name: Check out the exact revision
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+          cache-dependency-path: data/sources/requirements-materialize-public-data.txt
+
+      - name: Prove the runner and Docker daemon are native ARM64
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(uname -m)" = "aarch64"
+          docker_arch="$(docker info --format '{{.Architecture}}')"
+          test "${docker_arch}" = "aarch64" || test "${docker_arch}" = "arm64"
+          test "$(docker info --format '{{.CgroupVersion}}')" = "2"
+
+      - name: Materialize the pinned public Train and Dev inputs
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m pip install --disable-pip-version-check \
+            -r data/sources/requirements-materialize-public-data.txt
+          python tools/materialize_public_data.py
+
+      - name: Build the source-bound runtime image
+        shell: bash
+        run: |
+          set -euo pipefail
+          source_manifest_sha256="$(PYTHONPATH=src python \
+            tools/benchmark_runtime.py --print-source-manifest-sha256)"
+          test "${#source_manifest_sha256}" -eq 64
+          docker build --pull --platform linux/arm64 \
+            --build-arg "SOURCE_MANIFEST_SHA256=${source_manifest_sha256}" \
+            --file container/Dockerfile \
+            --tag ossp-router:native-arm64-gate .
+
+      - name: Run every tier under the enforced compute and isolation limits
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p build/native-arm64-runtime
+          PYTHONPATH=src python tools/check_runtime.py \
+            --image ossp-router:native-arm64-gate \
+            --repetitions 3 \
+            --report build/native-arm64-runtime/runtime-check-report.json
+          docker image inspect --format '{{.Size}}' \
+            ossp-router:native-arm64-gate \
+            > build/native-arm64-runtime/image-size-bytes.txt
+
+      - name: Verify the runtime evidence
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json
+          import pathlib
+          import re
+
+          path = pathlib.Path(
+              "build/native-arm64-runtime/runtime-check-report.json"
+          )
+          report = json.loads(path.read_text(encoding="utf-8"))
+          expected_limits = {
+              "cpu_cores": 2,
+              "wall_time_seconds_per_tier": 90,
+              "memory_bytes": 2_147_483_648,
+              "memory_swap_total_bytes": 2_147_483_648,
+              "processes_and_threads_total": 32,
+              "temporary_storage_bytes": 268_435_456,
+              "output_bytes": 4_194_304,
+          }
+          assert report["schema_version"] == 1
+          assert report["report_type"] == "participant-public-runtime-check"
+          assert report["passed"]
+          assert report["workload"] == {
+              "profile_id": "ossp-2026-public-train-dev-runtime-v1",
+              "episodes": 2_640,
+              "bytes": report["workload"]["bytes"],
+              "sha256": report["workload"]["sha256"],
+              "basis": "materialized-public-train-dev-inputs",
+              "represents_evaluation_distribution": False,
+          }
+          assert report["workload"]["bytes"] > 0
+          assert re.fullmatch(r"[0-9a-f]{64}", report["workload"]["sha256"])
+          assert report["runtime"]["docker_server_platform"] == "linux/arm64"
+          assert report["runtime"]["official_platform"] == "linux/arm64"
+          assert report["limits"] == expected_limits
+          assert len(report["tiers"]) == 3
+          assert {row["tier"] for row in report["tiers"]} == {
+              "fast", "balanced", "premium"
+          }
+          for tier in report["tiers"]:
+              assert tier["passed"]
+              assert 0 < tier["elapsed_seconds_max"] <= 90
+              assert len(tier["repetitions"]) == 3
+              hashes = set()
+              for repetition in tier["repetitions"]:
+                  assert repetition["status"] == "valid"
+                  assert repetition["passed"]
+                  assert repetition["returncode"] == 0
+                  assert repetition["timed_out"] is False
+                  assert 0 < repetition["elapsed_seconds"] <= 90
+                  assert 0 < repetition["output_bytes"] <= 4_194_304
+                  assert re.fullmatch(
+                      r"[0-9a-f]{64}", repetition["output_sha256"]
+                  )
+                  hashes.add(repetition["output_sha256"])
+              assert len(hashes) == 1
+          image_size = int(
+              pathlib.Path(
+                  "build/native-arm64-runtime/image-size-bytes.txt"
+              ).read_text(encoding="ascii").strip()
+          )
+          assert 0 < image_size <= 1_073_741_824
+          PY
+
+      - name: Capture immutable evidence
+        if: always()
+        shell: bash
+        run: |
+          set -uo pipefail
+          mkdir -p build/native-arm64-runtime
+          docker image inspect ossp-router:native-arm64-gate \
+            > build/native-arm64-runtime/image-inspect.json
+          docker image inspect --format '{{.Size}}' \
+            ossp-router:native-arm64-gate \
+            > build/native-arm64-runtime/image-size-bytes.txt
+          {
+            uname -a
+            docker version
+            docker info
+          } > build/native-arm64-runtime/environment.txt
+          find build/native-arm64-runtime -maxdepth 1 -type f \
+            ! -name SHA256SUMS -print0 \
+            | sort -z | xargs -0 sha256sum \
+            > build/native-arm64-runtime/SHA256SUMS
+
+      - name: Upload the runtime evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: native-arm64-runtime-${{ github.sha }}
+          path: build/native-arm64-runtime/
+          if-no-files-found: error
+          retention-days: 30

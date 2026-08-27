@@ -12,6 +12,7 @@ import tempfile
 import unittest
 
 from ossp_router.heuristic import (
+    analyze_text,
     episode_text,
     extract_features,
     make_submission,
@@ -179,6 +180,63 @@ class PromptHeuristicTest(unittest.TestCase):
         self.assertGreaterEqual(math.math_marker_count, 2)
         self.assertGreater(code.code_marker_count, 0)
         self.assertEqual(3, code.message_count)
+
+    def test_shared_text_statistics_keep_unicode_digit_contracts(self) -> None:
+        episode = parse_input(
+            {
+                "schema_version": 1,
+                "challenge_id": "ignored",
+                "split": "ignored",
+                "episodes": [
+                    {"episode_id": "opaque", "prompt": "가 A²٣.\n!"}
+                ],
+            }
+        ).episodes[0]
+        text = episode_text(episode)
+        statistics = analyze_text(text)
+        self.assertEqual(1, statistics.decimal_count)
+        self.assertEqual(2, statistics.digit_count)
+        self.assertEqual(1, statistics.hangul_count)
+        self.assertEqual(1, statistics.newline_count)
+        self.assertEqual(1, statistics.period_count)
+        self.assertEqual(
+            extract_features(episode),
+            extract_features(episode, statistics=statistics),
+        )
+
+    def test_shared_text_statistics_match_reference_unicode_scan(self) -> None:
+        samples = (
+            "",
+            "가힣\u1100\ud7a4 A_²٣Ⅷ½.\n!\u2003ßİ\u0301\u200d🙂",
+            "\u00a0\u001c\t\r\n０௧_\u2028Zz\U00010400\ud800!?",
+        )
+        for text in samples:
+            with self.subTest(text=repr(text)):
+                whitespace_count = sum(character.isspace() for character in text)
+                expected = {
+                    "character_count": len(text),
+                    "nonspace_count": len(text) - whitespace_count,
+                    "hangul_count": sum(
+                        "\uac00" <= character <= "\ud7a3" for character in text
+                    ),
+                    "decimal_count": sum(character.isdecimal() for character in text),
+                    "digit_count": sum(character.isdigit() for character in text),
+                    "uppercase_count": sum(character.isupper() for character in text),
+                    "symbol_count": sum(
+                        not character.isalnum() and not character.isspace()
+                        for character in text
+                    ),
+                    "newline_count": text.count("\n"),
+                    "period_count": text.count("."),
+                }
+                actual = analyze_text(text)
+                self.assertEqual(
+                    expected,
+                    {
+                        field: getattr(actual, field)
+                        for field in expected
+                    },
+                )
 
     def test_runtime_input_rejects_non_protocol_metadata(self) -> None:
         for forbidden in ("task_name", "source", "outcomes"):

@@ -12,6 +12,10 @@ from contextlib import redirect_stdout
 from unittest import mock
 
 from ossp_router.runtime import AttemptKind, AttemptResult
+from ossp_router.source_manifest import (
+    SOURCE_MANIFEST_LABEL,
+    source_tree_manifest,
+)
 
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
@@ -66,7 +70,12 @@ class ParticipantRuntimeCheckTest(unittest.TestCase):
             "Id": image_id,
             "Os": "linux",
             "Architecture": "arm64",
-            "Config": {"Volumes": None},
+            "Config": {
+                "Volumes": None,
+                "Labels": {
+                    SOURCE_MANIFEST_LABEL: source_tree_manifest(ROOT)["sha256"]
+                },
+            },
         }
         with mock.patch.object(
             check_runtime,
@@ -77,6 +86,24 @@ class ParticipantRuntimeCheckTest(unittest.TestCase):
                 image_id,
                 check_runtime._resolve_image("/usr/bin/docker", "router:local"),
             )
+
+    def test_image_source_manifest_binding_is_fail_closed(self) -> None:
+        image_id = "sha256:" + "b" * 64
+        for labels in (None, {SOURCE_MANIFEST_LABEL: "f" * 64}):
+            with self.subTest(labels=labels), mock.patch.object(
+                check_runtime,
+                "inspect_image_runtime_metadata",
+                return_value={
+                    "Id": image_id,
+                    "Os": "linux",
+                    "Architecture": "arm64",
+                    "Config": {"Volumes": None, "Labels": labels},
+                },
+            ):
+                with self.assertRaisesRegex(RuntimeError, "source manifest"):
+                    check_runtime._resolve_image(
+                        "/usr/bin/docker", "router:local"
+                    )
 
     def test_valid_output_directory_must_have_one_file(self) -> None:
         result = AttemptResult(

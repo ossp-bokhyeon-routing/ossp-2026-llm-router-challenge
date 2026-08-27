@@ -1,0 +1,24 @@
+# SPDX-FileCopyrightText: Copyright 2026 ossp-bokhyeon-routing contributors
+# SPDX-License-Identifier: Apache-2.0
+
+# Training-only dependency provenance (none is copied into the runtime image).
+# The hashes identify the CPython 3.13 Windows x86-64 archives used by the
+# recorded training environment.  Project licenses are BSD-3-Clause.
+# numpy:
+# https://files.pythonhosted.org/packages/cb/3b/d58c12eafcb298d4e6d0d40216866ab15f59e55d148a5658bb3132311fcf/numpy-2.2.6-cp313-cp313-win_amd64.whl
+# sha256=b0544343a702fa80c95ad5d3d608ea3599dd54d4632df855e4c8d24eb6ecfa1c
+# scipy:
+# https://files.pythonhosted.org/packages/7c/a7/4c94bbe91f12126b8bf6709b2471900577b7373a4fd1f431f28ba6f81115/scipy-1.16.0-cp313-cp313-win_amd64.whl
+# sha256=79a3c13d43c95aa80b87328a46031cf52508cf5f4df2767602c984ed1d3c6bbe
+# scikit-learn:
+# https://files.pythonhosted.org/packages/f3/bc/282514272815c827a9acacbe5b99f4f1a4bc5961053719d319480aee0812/scikit_learn-1.7.0-cp313-cp313-win_amd64.whl
+# sha256=5abd2acff939d5bd4701283f009b01496832d50ddafa83c90125a4e41c33e314
+# The BERT artifact was trained with this official PyTorch CUDA 11.8 wheel;
+# training was CPU-only and deterministic, so CUDA is not a runtime input:
+# https://download-r2.pytorch.org/whl/cu118/torch-2.7.1%2Bcu118-cp313-cp313-win_amd64.whl
+# sha256=3122e59a5fe4e9ee991e7ad4e7002afa549b2873e421759df6454f20f53a6c74
+
+numpy==2.2.6
+scipy==1.16.0
+scikit-learn==1.7.0
+torch==2.7.1

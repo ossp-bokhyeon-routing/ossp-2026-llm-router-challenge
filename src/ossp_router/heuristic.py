@@ -36,7 +36,6 @@ _CODE_MARKERS = re.compile(
     re.IGNORECASE | re.MULTILINE,
 )
 _MATH_MARKERS = re.compile(r"[=+\-*/^∑∫√≈≠≤≥<>]|\\(?:frac|sum|int|sqrt)\b")
-_NUMBER = re.compile(r"\d")
 _WORD = re.compile(r"[A-Za-z가-힣]+")
 _SENTENCE_END = re.compile(r"[.!?。！？]")
 _REASONING_WORDS = re.compile(
@@ -62,6 +61,21 @@ class PromptFeatures:
     reasoning_marker_count: int
 
 
+@dataclass(frozen=True)
+class TextStatistics:
+    """Character statistics shared by compatible router feature families."""
+
+    character_count: int
+    nonspace_count: int
+    hangul_count: int
+    decimal_count: int
+    digit_count: int
+    uppercase_count: int
+    symbol_count: int
+    newline_count: int
+    period_count: int
+
+
 def episode_text(episode: Episode) -> str:
     """Return only the prompt or message content available at routing time."""
 
@@ -71,25 +85,51 @@ def episode_text(episode: Episode) -> str:
     return "\n".join(message.content for message in episode.messages)
 
 
-def extract_features(episode: Episode) -> PromptFeatures:
+def analyze_text(text: str) -> TextStatistics:
+    """Collect deterministic Unicode counts with bounded-memory scans."""
+
+    if not isinstance(text, str):
+        raise TypeError("text must be a string")
+    character_count = len(text)
+    whitespace_count = sum(map(str.isspace, text))
+    alnum_count = sum(map(str.isalnum, text))
+    return TextStatistics(
+        character_count=character_count,
+        nonspace_count=character_count - whitespace_count,
+        hangul_count=sum("\uac00" <= character <= "\ud7a3" for character in text),
+        decimal_count=sum(map(str.isdecimal, text)),
+        # ``isdigit`` includes compatibility digits beyond Unicode decimal
+        # characters, so the dense model intentionally tracks both counts.
+        digit_count=sum(map(str.isdigit, text)),
+        uppercase_count=sum(map(str.isupper, text)),
+        symbol_count=character_count - alnum_count - whitespace_count,
+        newline_count=text.count("\n"),
+        period_count=text.count("."),
+    )
+
+
+def extract_features(
+    episode: Episode,
+    *,
+    statistics: Optional[TextStatistics] = None,
+) -> PromptFeatures:
     """Compute simple features without reading an ID, position, or metadata."""
 
     text = episode_text(episode)
-    characters = len(text)
-    nonspace = sum(not character.isspace() for character in text)
-    hangul = sum("\uac00" <= character <= "\ud7a3" for character in text)
-    numbers = len(_NUMBER.findall(text))
+    stats = statistics or analyze_text(text)
+    if stats.character_count != len(text):
+        raise ValueError("text statistics length differs from episode content")
     message_count = 1 if episode.prompt is not None else len(episode.messages or ())
     return PromptFeatures(
-        character_count=characters,
+        character_count=stats.character_count,
         message_count=message_count,
         word_count=len(_WORD.findall(text)),
         sentence_count=max(1, len(_SENTENCE_END.findall(text))),
-        hangul_ratio=hangul / max(1, nonspace),
+        hangul_ratio=stats.hangul_count / max(1, stats.nonspace_count),
         code_marker_count=len(_CODE_MARKERS.findall(text)),
         math_marker_count=len(_MATH_MARKERS.findall(text)),
-        numeric_density=numbers / max(1, nonspace),
-        long_context=characters >= 8_000,
+        numeric_density=stats.decimal_count / max(1, stats.nonspace_count),
+        long_context=stats.character_count >= 8_000,
         reasoning_marker_count=len(_REASONING_WORDS.findall(text)),
     )
 

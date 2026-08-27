@@ -275,6 +275,7 @@ class BenchmarkEvidenceTest(unittest.TestCase):
         artifacts = benchmark_runtime._artifact_hashes()
         self.assertEqual(64, len(manifest["sha256"]))
         paths = {entry["path"] for entry in manifest["entries"]}
+        self.assertIn(".dockerignore", paths)
         self.assertIn("container/Dockerfile", paths)
         self.assertIn("container/measurement.Dockerfile", paths)
         self.assertIn("container/entrypoint.py", paths)

@@ -41,6 +41,10 @@ from ossp_router.runtime import (
     is_immutable_image_reference,
     validate_image_configuration,
 )
+from ossp_router.source_manifest import (
+    SOURCE_MANIFEST_LABEL,
+    source_tree_manifest,
+)
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 REPORT_SCHEMA_VERSION = 1
 DEFAULT_TRAIN_INPUT = ROOT / "data/materialized/train/inputs.json"
@@ -121,6 +125,23 @@ def _resolve_image(docker: str, image: str) -> str:
         image_id
     ):
         raise RuntimeError("로컬 이미지의 변경 불가능한 ID를 확인할 수 없습니다.")
+    config = metadata.get("Config")
+    labels = config.get("Labels") if isinstance(config, Mapping) else None
+    image_source_manifest = (
+        labels.get(SOURCE_MANIFEST_LABEL)
+        if isinstance(labels, Mapping)
+        else None
+    )
+    current_source_manifest = source_tree_manifest(ROOT)["sha256"]
+    if not isinstance(image_source_manifest, str):
+        raise RuntimeError(
+            "이미지에 source manifest label이 없습니다. "
+            "SOURCE_MANIFEST_SHA256 build arg를 지정하십시오."
+        )
+    if image_source_manifest != current_source_manifest:
+        raise RuntimeError(
+            "이미지 source manifest label이 현재 소스와 일치하지 않습니다."
+        )
     return image_id
 
 
